@@ -12,10 +12,11 @@ import plotly.express as px
 import datetime
 import numpy as np
 
+# 1. Page Configuration (Must be first)
 st.set_page_config(page_title="PowerGuard AI - Global Load", page_icon="🌍", layout="wide")
 
 # ==========================================
-# --- 1. Login System ---
+# --- 2. Login System ---
 # ==========================================
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
@@ -38,7 +39,7 @@ if not st.session_state['logged_in']:
     st.stop()
 
 # ==========================================
-# --- 2. Global Engineering Database ---
+# --- 3. Global Engineering Database ---
 # ==========================================
 GLOBAL_GRID_CONFIG = {
     "Africa": {
@@ -78,7 +79,6 @@ def calculate_thermodynamic_load(temp, base, cool_k, heat_k, year_diff, growth_r
     else:
         return current_base
 
-# حل مشكلة الكاش (استخدام اسم الدولة لضمان عدم اختلاط البيانات)
 @st.cache_data(show_spinner=False, ttl=3600)
 def generate_country_forecast(country_name, config):
     try:
@@ -88,10 +88,9 @@ def generate_country_forecast(country_name, config):
         end_date = datetime.date.today() - datetime.timedelta(days=5)
         start_date = end_date - datetime.timedelta(days=365 * 6)
         
-        # إضافة Timeout لمنع تهنيج السيرفر
         url = f"https://archive-api.open-meteo.com/v1/archive?latitude={lat}&longitude={lon}&start_date={start_date}&end_date={end_date}&daily=temperature_2m_mean&timezone=auto"
         response = requests.get(url, timeout=15)
-        response.raise_for_status() # التأكد من نجاح الاتصال
+        response.raise_for_status() 
         data = response.json()
         
         dates = data['daily']['time']
@@ -107,7 +106,6 @@ def generate_country_forecast(country_name, config):
         
         df_prophet = df[['Date', 'Load_MW']].rename(columns={'Date': 'ds', 'Load_MW': 'y'})
         
-        # تدريب الموديل
         model = Prophet(yearly_seasonality=True, weekly_seasonality=True, daily_seasonality=False)
         model.fit(df_prophet)
         
@@ -115,10 +113,10 @@ def generate_country_forecast(country_name, config):
         forecast = model.predict(future)
         return forecast
     except Exception as e:
-        return None # في حالة فشل الاتصال
+        return None 
 
 # ==========================================
-# --- 3. Main Dashboard UI ---
+# --- 4. Main Dashboard UI ---
 # ==========================================
 st.sidebar.markdown("### 👤 User Profile")
 st.sidebar.markdown("**Eng. Mahmoud Reda**\n\n*DBA Candidate*")
@@ -161,7 +159,7 @@ if not prediction_row.empty:
     weather_impact = pred_load - trend_val
     impact_pct = (abs(weather_impact) / pred_load) * 100 if pred_load > 0 else 0
 
-    # --- 1. Top KPIs ---
+    # --- Section 1: Top KPIs ---
     st.markdown(f"### 🎯 Grid Load Projections for **{selected_country}**")
     col1, col2, col3 = st.columns(3)
     col1.metric("⚡ Predicted Load", f"{pred_load:,.0f} MW", f"Based on {selected_country} profile")
@@ -170,15 +168,17 @@ if not prediction_row.empty:
     
     st.markdown("---")
     
-    # --- 2. Executive Insight & Breakdown (القسم الجديد للإدارة) ---
+    # --- Section 2: Executive Insight & Breakdown ---
     st.markdown("### 🧠 Executive Decision Insight")
     col_text, col_pie = st.columns([1.5, 1])
     
     with col_text:
         st.markdown("<br>", unsafe_allow_html=True)
+        
+        # 1. الرسائل الاستراتيجية
         if weather_impact > 1000:
             st.warning(f"⚠️ **Peak Demand Alert:** \nThe weather conditions (Heating/Cooling) will add an extra **{weather_impact:,.0f} MW** ({impact_pct:.1f}% of total demand) to the base load on {selected_date}.")
-            st.markdown("**💡 Strategic Action:** Ensure Peaking Power Plants (e.g., Gas Turbines) or Battery Energy Storage Systems (BESS) are scheduled and available to cover this surge to prevent grid instability.")
+            st.markdown("**💡 Strategic Action:** Ensure Peaking Power Plants (e.g., Gas Turbines) or Battery Energy Storage Systems (BESS) are scheduled and available to cover this surge.")
         elif weather_impact < -1000:
             st.info(f"📉 **Low Demand Period:** \nThe expected load is below the base trend by **{abs(weather_impact):,.0f} MW** due to highly favorable weather conditions.")
             st.markdown("**💡 Strategic Action:** This represents an optimal window for scheduling preventative maintenance for major Base-load power plants without risking supply.")
@@ -186,8 +186,41 @@ if not prediction_row.empty:
             st.success(f"✅ **Stable Operation:** \nThe expected load is almost identical to the base trend with minimal weather interference (Variance: **{weather_impact:,.0f} MW**).")
             st.markdown("**💡 Strategic Action:** Proceed with standard grid operation protocols. No extreme interventions required.")
 
+        # ==========================================
+        # --- الإضافة الجديدة: Financial & Operational Impact ---
+        # ==========================================
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("#### 💸 Financial & Operational Impact")
+        
+        # افتراض: متوسط تكلفة الميجاوات/ساعة = 50 دولار (حساب التكلفة الإضافية في 24 ساعة)
+        daily_cost_variance = weather_impact * 24 * 50 
+        
+        # افتراض: قدرة الشبكة القصوى هي 130% من الحمل الأساسي
+        max_capacity = trend_val * 1.3
+        stress_level = (pred_load / max_capacity) * 100
+        stress_level = min(max(stress_level, 0), 100) # الحد الأقصى 100% والأدنى 0%
+        
+        mc1, mc2 = st.columns(2)
+        # مؤشر التكلفة
+        mc1.metric("Est. Daily OPEX Variance ($)", 
+                   f"${abs(daily_cost_variance):,.0f}", 
+                   f"{'Cost Overrun' if weather_impact > 0 else 'Cost Savings'}", 
+                   delta_color="inverse" if weather_impact > 0 else "normal")
+        
+        # مؤشر الإجهاد
+        with mc2:
+            st.write(f"**⚡ Grid Stress Level:** {stress_level:.1f}%")
+            if stress_level > 85:
+                st.progress(stress_level / 100.0)
+                st.caption("🔴 High Stress (Risk of brownouts)")
+            elif stress_level > 70:
+                st.progress(stress_level / 100.0)
+                st.caption("🟡 Moderate Stress")
+            else:
+                st.progress(stress_level / 100.0)
+                st.caption("🟢 Optimal Load")
+
     with col_pie:
-        # رسمة توضح نسبة الحمل الأساسي مقارنة بتأثير الطقس
         fig_pie = go.Figure(data=[go.Pie(
             labels=['Base Load (Core)', 'Weather Impact (HVAC)'],
             values=[trend_val, abs(weather_impact)],
@@ -200,7 +233,7 @@ if not prediction_row.empty:
 
     st.markdown("---")
 
-    # --- 3. Macro-Level Strategic Charts ---
+    # --- Section 3: Macro-Level Strategic Charts ---
     col_chart1, col_chart2 = st.columns([2, 1])
     with col_chart1:
         st.markdown(f"#### 📈 Long-Term Forecast (To 2040) - {selected_country}")
