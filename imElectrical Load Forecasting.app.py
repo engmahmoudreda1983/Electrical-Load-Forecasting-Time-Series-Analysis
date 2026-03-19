@@ -156,14 +156,51 @@ prediction_row = forecast[forecast['ds'].dt.date == selected_date]
 if not prediction_row.empty:
     pred_load = prediction_row['yhat'].values[0]
     trend_val = prediction_row['trend'].values[0]
+    
+    # حساب تأثير الطقس (الفرق بين الحمل المتوقع والأساسي)
+    weather_impact = pred_load - trend_val
+    impact_pct = (abs(weather_impact) / pred_load) * 100 if pred_load > 0 else 0
 
+    # --- 1. Top KPIs ---
     st.markdown(f"### 🎯 Grid Load Projections for **{selected_country}**")
     col1, col2, col3 = st.columns(3)
     col1.metric("⚡ Predicted Load", f"{pred_load:,.0f} MW", f"Based on {selected_country} profile")
     col2.metric("📊 Underlying Trend (Base Load)", f"{trend_val:,.0f} MW", "Long-term capacity need")
     col3.metric("🌡️ Grid Nature", "Summer-Peaking" if country_config['cool_k'] > country_config['heat_k'] else "Winter-Peaking")
+    
+    st.markdown("---")
+    
+    # --- 2. Executive Insight & Breakdown (القسم الجديد للإدارة) ---
+    st.markdown("### 🧠 Executive Decision Insight")
+    col_text, col_pie = st.columns([1.5, 1])
+    
+    with col_text:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if weather_impact > 1000:
+            st.warning(f"⚠️ **Peak Demand Alert:** \nThe weather conditions (Heating/Cooling) will add an extra **{weather_impact:,.0f} MW** ({impact_pct:.1f}% of total demand) to the base load on {selected_date}.")
+            st.markdown("**💡 Strategic Action:** Ensure Peaking Power Plants (e.g., Gas Turbines) or Battery Energy Storage Systems (BESS) are scheduled and available to cover this surge to prevent grid instability.")
+        elif weather_impact < -1000:
+            st.info(f"📉 **Low Demand Period:** \nThe expected load is below the base trend by **{abs(weather_impact):,.0f} MW** due to highly favorable weather conditions.")
+            st.markdown("**💡 Strategic Action:** This represents an optimal window for scheduling preventative maintenance for major Base-load power plants without risking supply.")
+        else:
+            st.success(f"✅ **Stable Operation:** \nThe expected load is almost identical to the base trend with minimal weather interference (Variance: **{weather_impact:,.0f} MW**).")
+            st.markdown("**💡 Strategic Action:** Proceed with standard grid operation protocols. No extreme interventions required.")
+
+    with col_pie:
+        # رسمة توضح نسبة الحمل الأساسي مقارنة بتأثير الطقس
+        fig_pie = go.Figure(data=[go.Pie(
+            labels=['Base Load (Core)', 'Weather Impact (HVAC)'],
+            values=[trend_val, abs(weather_impact)],
+            hole=.5,
+            marker_colors=['#007acc', '#e74c3c' if weather_impact > 0 else '#2ecc71'],
+            textinfo='percent+label'
+        )])
+        fig_pie.update_layout(title_text="Load Composition", title_x=0.5, margin=dict(t=40, b=0, l=0, r=0), showlegend=False)
+        st.plotly_chart(fig_pie, use_container_width=True)
+
     st.markdown("---")
 
+    # --- 3. Macro-Level Strategic Charts ---
     col_chart1, col_chart2 = st.columns([2, 1])
     with col_chart1:
         st.markdown(f"#### 📈 Long-Term Forecast (To 2040) - {selected_country}")
@@ -184,5 +221,6 @@ if not prediction_row.empty:
         fig_season.update_layout(showlegend=False)
         st.plotly_chart(fig_season, use_container_width=True)
 
+# Footer
 st.markdown("---")
 st.markdown("<div style='text-align: center; color: gray; font-size: 12px;'>© 2026 PowerGuard AI by Eng. Mahmoud Reda. All rights reserved.</div>", unsafe_allow_html=True)
