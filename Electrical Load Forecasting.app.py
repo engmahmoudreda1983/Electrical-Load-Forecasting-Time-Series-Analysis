@@ -107,7 +107,7 @@ with col_main:
 
 with col_side:
     st.markdown("#### 📊 Load Composition")
-    fig_pie = px.pie(values=, names=['Base Load', 'Weather Variable'], hole=0.4)
+    fig_pie = px.pie(values=[trend_val, abs(weather_impact)], names=['Base Load', 'Weather Variable'], hole=0.4)
     st.plotly_chart(fig_pie, use_container_width=True)
 
 st.caption("© 2026 PowerGuard AI by Eng. Mahmoud Reda. Confidential and Proprietary.")
