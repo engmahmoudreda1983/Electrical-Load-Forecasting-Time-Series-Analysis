@@ -17,7 +17,7 @@ import numpy as np
 st.set_page_config(page_title="PowerGuard AI - Global Load", page_icon="🌍", layout="wide")
 
 # ==========================================
-# --- 2. Login System ---
+# --- 2. Login System (Secured via st.secrets) ---
 # ==========================================
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
@@ -32,7 +32,8 @@ if not st.session_state['logged_in']:
         username = st.text_input("Username")
         password = st.text_input("Password", type="password")
         if st.button("Secure Login", use_container_width=True):
-            if username == "admin" and password == "DBA2026": 
+            # هنا بيتم سحب اليوزر والباسورد من إعدادات Streamlit Cloud بشكل آمن
+            if username == st.secrets["username"] and password == st.secrets["password"]: 
                 st.session_state['logged_in'] = True
                 st.rerun()
             else:
@@ -71,7 +72,6 @@ GLOBAL_GRID_CONFIG = {
     }
 }
 
-# تم استبدال דالة التحميل لتقرأ الموديل الجديد أوفلاين
 @st.cache_data(show_spinner=False, ttl=3600)
 def generate_country_forecast(country_name, config):
     try:
@@ -94,9 +94,10 @@ def generate_country_forecast(country_name, config):
         forecast['yhat'] = forecast['yhat'] * scale_factor
         forecast['trend'] = forecast['trend'] * scale_factor
         
-        # محاكاة موسمية الصيف لتشغيل رسمة الموسمية بشكل صحيح
+        # التعديل هنا: محاكاة موسمية الصيف بطريقة آمنة لا تتأثر باختلاف نسخ Pandas
+        is_summer = (forecast['ds'].dt.month >= 5) & (forecast['ds'].dt.month <= 9)
         forecast['yearly'] = np.where(
-            forecast['ds'].dt.month.isin(),
+            is_summer,
             forecast['trend'] * 0.15, 
             -forecast['trend'] * 0.10  
         )
