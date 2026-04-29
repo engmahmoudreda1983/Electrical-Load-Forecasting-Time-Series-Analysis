@@ -136,8 +136,8 @@ if forecast is None:
     st.stop()
 
 st.sidebar.header("📅 Select Target Date")
-min_date = forecast['ds'].dt.date.values # <--- التعديل هنا لضمان قيمة واحدة
-max_date = forecast['ds'].dt.date.values[-1]
+min_date = forecast['ds'].min().date()
+max_date = forecast['ds'].max().date()
 selected_date = st.sidebar.date_input("Target Date (Up to 2040):", min_value=min_date, max_value=max_date, value=datetime.date(2026, 7, 15))
 
 # تحويل التواريخ لنصوص لضمان التطابق 100%
