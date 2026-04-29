@@ -218,7 +218,7 @@ if not prediction_row.empty:
         yearly_data = forecast.groupby('Year')['yhat'].mean().reset_index()
         fig_trend = px.line(yearly_data, x='Year', y='yhat', markers=True, line_shape='spline')
         fig_trend.update_traces(line_color='#007acc', line_width=3)
-	fig_trend.update_layout(yaxis_tickformat=',.0f', yaxis_title="Load (MW)")
+        fig_trend.update_layout(yaxis_tickformat=',.0f', yaxis_title="Load (MW)")
         st.plotly_chart(fig_trend, use_container_width=True)
         
     with col_chart2:
