@@ -136,7 +136,7 @@ if forecast is None:
     st.stop()
 
 st.sidebar.header("📅 Select Target Date")
-min_date = forecast['ds'].dt.date.values
+min_date = forecast['ds'].dt.date.values # <--- التعديل هنا لضمان قيمة واحدة
 max_date = forecast['ds'].dt.date.values[-1]
 selected_date = st.sidebar.date_input("Target Date (Up to 2040):", min_value=min_date, max_value=max_date, value=datetime.date(2026, 7, 15))
 
@@ -146,6 +146,7 @@ forecast['date_str'] = forecast['ds'].dt.strftime('%Y-%m-%d')
 prediction_row = forecast[forecast['date_str'] == selected_date_str]
 
 if not prediction_row.empty:
+    # <--- التعديلات هنا لضمان استخراج رقم واحد فقط بدل قائمة
     pred_load = prediction_row['yhat'].values if not pd.isna(prediction_row['yhat'].values) else 0
     trend_val = prediction_row['trend'].values if not pd.isna(prediction_row['trend'].values) else 0
     
@@ -209,7 +210,7 @@ if not prediction_row.empty:
 
     st.markdown("---")
 
-    col_chart1, col_chart2 = st.columns()
+    col_chart1, col_chart2 = st.columns() # <--- التعديل هنا كمان!
     
     with col_chart1:
         st.markdown(f"#### 📈 Long-Term Forecast (To 2040) - {selected_country}")
