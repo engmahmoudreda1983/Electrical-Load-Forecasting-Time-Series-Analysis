@@ -210,7 +210,7 @@ if not prediction_row.empty:
 
     st.markdown("---")
 
-    col_chart1, col_chart2 = st.columns() # <--- التعديل هنا كمان!
+    col_chart1, col_chart2 = st.columns([2,1]) # <--- التعديل هنا كمان!
     
     with col_chart1:
         st.markdown(f"#### 📈 Long-Term Forecast (To 2040) - {selected_country}")
