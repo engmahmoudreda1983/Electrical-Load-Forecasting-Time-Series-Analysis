@@ -147,8 +147,8 @@ prediction_row = forecast[forecast['date_str'] == selected_date_str]
 
 if not prediction_row.empty:
     # <--- التعديلات هنا لضمان استخراج رقم واحد فقط بدل قائمة
-    pred_load = prediction_row['yhat'].values if not pd.isna(prediction_row['yhat'].values) else 0
-    trend_val = prediction_row['trend'].values if not pd.isna(prediction_row['trend'].values) else 0
+    pred_load = float(prediction_row['yhat'].iloc)
+    trend_val = float(prediction_row['trend'].iloc)
     
     weather_impact = pred_load - trend_val
     impact_pct = (abs(weather_impact) / pred_load) * 100 if pred_load > 0 else 0
