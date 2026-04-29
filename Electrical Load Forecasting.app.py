@@ -218,6 +218,7 @@ if not prediction_row.empty:
         yearly_data = forecast.groupby('Year')['yhat'].mean().reset_index()
         fig_trend = px.line(yearly_data, x='Year', y='yhat', markers=True, line_shape='spline')
         fig_trend.update_traces(line_color='#007acc', line_width=3)
+	fig_trend.update_layout(yaxis_tickformat=',.0f', yaxis_title="Load (MW)")
         st.plotly_chart(fig_trend, use_container_width=True)
         
     with col_chart2:
@@ -228,7 +229,7 @@ if not prediction_row.empty:
         monthly_data['Month'] = pd.Categorical(monthly_data['Month'], categories=months_order, ordered=True)
         monthly_data = monthly_data.sort_values('Month')
         fig_season = px.bar(monthly_data, x='Month', y='yearly', color='yearly', color_continuous_scale='RdBu_r')
-        fig_season.update_layout(showlegend=False)
+        fig_season.update_layout(showlegend=False, yaxis_tickformat=',.0f', yaxis_title="Load Variance (MW)")
         st.plotly_chart(fig_season, use_container_width=True)
         
 else:
