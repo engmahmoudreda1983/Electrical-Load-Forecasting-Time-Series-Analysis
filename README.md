@@ -21,7 +21,9 @@ an FMEA priority and an action (including the load transfer needed at the peak).
 
 ## Data formats (CSV)
 - Transformer register: `Transformer ID, Bay, Load Type, Rating (MVA), Cooling, Top-Oil Rise (K), Hot-Spot Gradient (K)`
-- Load history: `Timestamp, Transformer ID, Load (MVA)` (hourly)
+- Load history: `Timestamp, Transformer ID, Load (MVA)` (hourly), or straight from the DCS: MW and MVAR per side
+  (`HV MW, HV MVAR, MV MW, MV MVAR, LV MW, LV MVAR`, or `MW, MVAR`). MVA = sqrt(MW^2 + MVAR^2); the transformer load is the HV side
+  (or MV + LV when the HV side is not metered); the power factor and the loading of every side are shown.
 - Ambient temperature / weather forecast: `Timestamp, Ambient (C)` (hourly)
 
 Login credentials are read from the Streamlit secrets `APP_USERNAME` and `APP_PASSWORD`. The demo data is synthetic; the model

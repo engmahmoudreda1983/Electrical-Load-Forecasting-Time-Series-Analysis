@@ -141,6 +141,14 @@ def demo_full():
     return gc.demo_data()
 
 
+@st.cache_data(show_spinner=False)
+def demo_dcs_csv(tid='TR-2', days=60):
+    L = demo_full()['loads']
+    L = L[L['Transformer ID'] == tid]
+    L = L[pd.to_datetime(L['Timestamp']) < pd.Timestamp(DEMO_ORIGIN)].tail(24 * days)
+    return gc.demo_power(L).to_csv(index=False).encode('utf-8-sig')
+
+
 def demo_history(tid):
     d = demo_full()
     L = d['loads'][d['loads']['Transformer ID'] == tid]
@@ -345,6 +353,8 @@ def read_csv(label, key, need):
         return None, None
     try:
         df = pd.read_csv(f)
+        if 'Load (MVA)' in need:
+            df, _ = gc.loads_from_power(df)
     except Exception as e:
         return None, f"Cannot read the file: {e}"
     miss = [c for c in need if c not in df.columns]
@@ -360,7 +370,7 @@ NEED = {'register': ['Transformer ID', 'Rating (MVA)', 'Cooling', 'Load Type'], 
 # ==========================================
 DEF = {'id': 'TR-7', 'bay': 'Feeder group C', 'type': 'Residential', 'rating': 50.0, 'cool': 'ONAF', 'to': 50.0, 'hs': 30.0,
        'hsrc': 'Demo transformer history', 'dtr': 'TR-2', 'wsrc': 'Normal climate of a Gulf city', 'city': 'Dammam', 'shift': 0.0,
-       'start': date(2026, 8, 10), 'days': 7, 'lim': 110.0}
+       'start': date(2026, 8, 10), 'days': 7, 'lim': 110.0, 'rmv': 0.0, 'rlv': 0.0}
 
 
 def init_fp():
@@ -407,7 +417,12 @@ def forecast_page():
         st.radio("Source", ['Demo transformer history', 'Upload CSV'], key='fp_hsrc', horizontal=True)
         up_hist = None
         if ss['fp_hsrc'] == 'Upload CSV':
-            up_hist = st.file_uploader("Timestamp, Load (MVA)  (optional: Transformer ID, Ambient (C))", type='csv', key='fp_hfile')
+            up_hist = st.file_uploader("Timestamp + either Load (MVA) or MW and MVAR from the DCS (HV, MV, LV sides; e.g. 'HV MW', 'HV MVAR')"
+                                       "  (optional: Transformer ID, Ambient (C))", type='csv', key='fp_hfile')
+            c1, c2 = st.columns(2)
+            c1.number_input("MV winding rating (MVA, 0 = not used)", 0.0, 2000.0, key='fp_rmv')
+            c2.number_input("LV winding rating (MVA, 0 = not used)", 0.0, 2000.0, key='fp_rlv')
+            st.download_button("📥 Demo DCS file (MW / MVAR, HV-MV-LV) for TR-2", demo_dcs_csv(), "GridGuard_demo_DCS_TR-2.csv", 'text/csv', key='fp_dcs')
         else:
             st.selectbox("Demo transformer", list(demo_full()['register']['Transformer ID']), key='fp_dtr')
         st.markdown("**Weather forecast (hourly ambient)**")
@@ -451,18 +466,21 @@ def collect_and_forecast(up_hist, up_w):
            'Cooling': ss['fp_cool'], 'Top-Oil Rise (K)': float(ss['fp_to']), 'Hot-Spot Gradient (K)': float(ss['fp_hs'])}
     origin = pd.Timestamp(ss['fp_start']); days = int(ss['fp_days'])
     tts = tv = None
+    dcs_sides = None
     if ss['fp_hsrc'] == 'Upload CSV':
         if up_hist is None:
             raise ValueError("upload the load history CSV.")
-        df = pd.read_csv(up_hist)
+        df, sides = gc.loads_from_power(pd.read_csv(up_hist))
         if 'Timestamp' not in df or 'Load (MVA)' not in df:
-            raise ValueError("the load history needs the columns Timestamp and Load (MVA).")
+            raise ValueError("the load history needs Timestamp and either Load (MVA) or MW and MVAR columns (e.g. 'HV MW', 'HV MVAR').")
         if 'Transformer ID' in df and (df['Transformer ID'].astype(str) == reg['Transformer ID']).any():
             df = df[df['Transformer ID'].astype(str) == reg['Transformer ID']]
         hts = pd.to_datetime(df['Timestamp'], errors='coerce'); ok = hts.notna()
         hts, hl = hts[ok], pd.to_numeric(df['Load (MVA)'], errors='coerce')[ok].to_numpy(float)
         if 'Ambient (C)' in df:
             tts, tv = hts, pd.to_numeric(df['Ambient (C)'], errors='coerce')[ok].to_numpy(float)
+        if sides:
+            dcs_sides = gc.side_summary(df[ok], sides, {'HV': reg['Rating (MVA)'], 'MV': ss.get('fp_rmv') or None, 'LV': ss.get('fp_rlv') or None})
     else:
         hts, hl = demo_history(ss['fp_dtr'])
         w = demo_full()['weather']; tts, tv = pd.to_datetime(w['Timestamp']), w['Ambient (C)'].to_numpy(float)
@@ -497,7 +515,8 @@ def collect_and_forecast(up_hist, up_w):
         act = s_all.reindex(fc['ts'])
         actual = act.to_numpy() if act.notna().mean() > 0.9 else None
     h0 = pd.DatetimeIndex(hts_p) >= origin - pd.Timedelta(days=3)
-    return {'a': a, 'fc': fc, 'reg': reg, 'hist_ts': pd.DatetimeIndex(hts_p)[h0], 'hist_load': hl_p[h0], 'lim': float(ss['fp_lim']), 'wsrc': wsrc, 'actual': actual}
+    return {'a': a, 'fc': fc, 'reg': reg, 'hist_ts': pd.DatetimeIndex(hts_p)[h0], 'hist_load': hl_p[h0], 'lim': float(ss['fp_lim']), 'wsrc': wsrc, 'actual': actual,
+            'dcs_sides': dcs_sides}
 
 
 def show_forecast(res):
@@ -513,6 +532,11 @@ def show_forecast(res):
     c1, c2 = st.columns([1, 1.3])
     c1.plotly_chart(gauge(a['Overall Risk (%)'], color), width=STRETCH, key='fp_g')
     c2.plotly_chart(mode_plot(a['Mode Risks']), width=STRETCH, key='fp_m')
+    if res.get('dcs_sides') is not None:
+        st.markdown("#### Load from the DCS (MW / MVAR per side)")
+        st.caption("MVA = √(MW² + MVAR²) for every side; the transformer load used by the AI and the thermal model is the HV side "
+                   "(or the sum of the MV and LV sides when the HV side is not metered). Power factor = MW / MVA.")
+        st.dataframe(res['dcs_sides'], hide_index=True, width=STRETCH)
     st.plotly_chart(forecast_plot(fc, res['hist_ts'], res['hist_load'], res['lim'], actual=res.get('actual')), width=STRETCH, key='fp_fc')
     if res.get('actual') is not None:
         ape = np.nanmean(np.abs(fc['load'] - res['actual']) / res['actual']) * 100
@@ -696,7 +720,7 @@ def model_page():
         st.error(e)
     with st.expander("📄 File formats and demo files"):
         st.markdown("- **Transformer register:** `Transformer ID, Bay, Load Type (Residential/Commercial/Industrial/Mixed), Rating (MVA), Cooling (ONAN/ONAF/OFAF), "
-                    "Top-Oil Rise (K), Hot-Spot Gradient (K)` (the last two optional).\n- **Load history:** `Timestamp, Transformer ID, Load (MVA)`, hourly.\n"
+                    "Top-Oil Rise (K), Hot-Spot Gradient (K)` (the last two optional).\n- **Load history:** `Timestamp, Transformer ID, Load (MVA)` or the DCS MW and MVAR per side (`HV MW, HV MVAR, MV MW, MV MVAR, LV MW, LV MVAR`), hourly.\n"
                     "- **Ambient temperature:** `Timestamp, Ambient (C)`, hourly (station or weather service history).")
         d = demo_full(); cc = st.columns(3)
         cc[0].download_button("Demo register", d['register'].to_csv(index=False).encode('utf-8-sig'), 'demo_gridguard_register.csv', 'text/csv', key='dl_r')
