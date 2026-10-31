@@ -17,6 +17,7 @@ Inputs (CSV):
   * Weather             : Timestamp, Ambient (C)                        (hourly; history and forecast)
 """
 import math
+import re
 from datetime import date, timedelta
 
 import numpy as np
@@ -605,3 +606,79 @@ def historical_study(R, threshold=120.0, alert=117.0, gap_days=3, false_margin=1
             'peak_mape_by_day': by.groupby('Day Ahead')['err'].mean().round(2).to_dict(),
             'hs_mae_by_day': by.groupby('Day Ahead')['herr'].mean().round(2).to_dict()}
     return E, summ
+
+
+# ---------------------------------------------------------------- MW / MVAR from the DCS
+_SIDES = ('HV', 'MV', 'LV')
+
+
+def _find(cols, side, kind):
+    """Column of `kind` (MW or MVAR) for `side` (HV/MV/LV, or None for a single unnamed side)."""
+    for c in cols:
+        n = str(c).upper().replace('_', ' ').replace('-', ' ')
+        if kind == 'MVAR':
+            ok = bool(re.search(r'\bM\s*VAR\b|\bMVAR\b|\bMVR\b', n))
+        else:
+            ok = bool(re.search(r'\bMW\b', n)) and 'VAR' not in n
+        if not ok:
+            continue
+        has_side = re.search(r'\b(HV|MV|LV)\b', n.replace('MVAR', '').replace('MW', ''))
+        if side is None and not has_side:
+            return c
+        if side and has_side and has_side.group(1) == side:
+            return c
+    return None
+
+
+def loads_from_power(df):
+    """Load history from the DCS: MW and MVAR per side (HV, MV, LV) -> MVA per side, power factor and the transformer load
+    (the HV side, which carries the whole transformer load; or the single MW/MVAR pair). A file that already has
+    'Load (MVA)' is returned unchanged. Columns such as 'HV MW', 'HV MVAR', 'MV_MW', 'MV MVAR' or 'MW', 'MVAR' are recognised."""
+    if 'Load (MVA)' in df.columns:
+        return df, []
+    out = df.copy(); sides = []
+    for side in _SIDES + (None,):
+        cw, cq = _find(df.columns, side, 'MW'), _find(df.columns, side, 'MVAR')
+        if cw is None and cq is None:
+            continue
+        p = pd.to_numeric(df[cw], errors='coerce') if cw is not None else 0.0
+        q = pd.to_numeric(df[cq], errors='coerce') if cq is not None else 0.0
+        s = np.sqrt(np.asarray(p, float) ** 2 + np.asarray(q, float) ** 2)
+        tag = side or 'HV'
+        if tag in sides:
+            continue
+        out[f'{tag} MVA'] = np.round(s, 3)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            out[f'{tag} PF'] = np.round(np.where(s > 0, np.abs(np.asarray(p, float)) / s, np.nan), 3)
+        sides.append(tag)
+    if not sides:
+        return df, []
+    if 'HV' in sides:
+        out['Load (MVA)'] = out['HV MVA']
+    else:                                            # no HV metering: the windings below carry the whole load
+        out['Load (MVA)'] = out[[f'{s} MVA' for s in sides]].sum(axis=1)
+    return out, sides
+
+
+def side_summary(df, sides, ratings=None):
+    """Peak MVA, peak loading and average power factor of every side in the history."""
+    rows = []
+    for s in sides:
+        mva = pd.to_numeric(df[f'{s} MVA'], errors='coerce')
+        r = (ratings or {}).get(s)
+        rows.append({'Side': s, 'Peak MVA': round(float(mva.max()), 2), 'Average MVA': round(float(mva.mean()), 2),
+                     'Peak loading (%)': round(float(mva.max()) / r * 100, 1) if r else None,
+                     'Average power factor': round(float(pd.to_numeric(df[f'{s} PF'], errors='coerce').mean()), 3)})
+    return pd.DataFrame(rows)
+
+
+def demo_power(loads, seed=3):
+    """Demo DCS file: HV MW/MVAR from the demo MVA, split into MV and LV windings."""
+    rng = np.random.default_rng(seed)
+    L = loads.copy()
+    pf = np.clip(0.93 + 0.03 * np.sin(np.arange(len(L)) * 2 * np.pi / 24) + rng.normal(0, 0.005, len(L)), 0.85, 0.99)
+    s = L['Load (MVA)'].to_numpy(float)
+    L['HV MW'] = np.round(s * pf, 2); L['HV MVAR'] = np.round(s * np.sqrt(1 - pf ** 2), 2)
+    L['MV MW'] = np.round(L['HV MW'] * 0.7, 2); L['MV MVAR'] = np.round(L['HV MVAR'] * 0.72, 2)
+    L['LV MW'] = np.round(L['HV MW'] * 0.3 * 0.99, 2); L['LV MVAR'] = np.round(L['HV MVAR'] * 0.27, 2)
+    return L.drop(columns=['Load (MVA)'])
